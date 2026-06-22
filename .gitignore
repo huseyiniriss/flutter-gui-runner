@@ -1,0 +1,18 @@
+# Swift / SPM
+.build/
+.swiftpm/
+*.xcodeproj
+Package.resolved
+
+# App bundle & artifacts (built locally / in CI)
+*.app
+*.dmg
+dist/
+
+# macOS
+.DS_Store
+
+# Secrets — never commit signing material
+*.jks
+*.keystore
+**/key.properties
