@@ -38,17 +38,15 @@ like Zed can't add that UI via extensions (no toolbar buttons, no dropdowns).
 **Flutter GUI Runner is that missing half of the loop** — a small, native macOS
 app that does what the Android Studio Flutter plugin does, next to *any* editor.
 
-## Screenshots
+## A look around
 
-| Run | Build |
-|---|---|
-| ![Run](assets/screenshots/run.png) | ![Build](assets/screenshots/build.png) |
-| **Emulators & Simulators** | **Packages** |
-| ![Emulators](assets/screenshots/emulators.png) | ![Packages](assets/screenshots/packages.png) |
-| **Commands** | **SDK** |
-| ![Commands](assets/screenshots/commands.png) | ![SDK](assets/screenshots/sdk.png) |
-| **Doctor** | **Settings** |
-| ![Doctor](assets/screenshots/doctor.png) | ![Settings](assets/screenshots/settings.png) |
+<div align="center">
+
+![Flutter GUI Runner — tabs](assets/demo.gif)
+
+*Run · Emulators · Build · Packages · Commands · Git · SDK · Doctor · Settings*
+
+</div>
 
 ## Features
 
