@@ -629,6 +629,27 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Pick a custom entry-point .dart file; stored as a project-relative path.
+    func chooseEntryPoint() {
+        guard let project = selectedProject else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = []
+        panel.allowsOtherFileTypes = true
+        panel.directoryURL = project.appendingPathComponent("lib")
+        panel.prompt = "Use"
+        panel.message = "Select the Dart entry file (e.g. lib/main_prod.dart)"
+        if panel.runModal() == .OK, let url = panel.url {
+            let prefix = project.path + "/"
+            let rel = url.path.hasPrefix(prefix)
+                ? String(url.path.dropFirst(prefix.count)) : url.path
+            target = rel
+            if !entryPoints.contains(rel) { entryPoints.append(rel); entryPoints.sort() }
+        }
+    }
+
     /// Pick the Flutter SDK folder (or binary) via a file panel.
     func chooseFlutterPath() {
         let panel = NSOpenPanel()

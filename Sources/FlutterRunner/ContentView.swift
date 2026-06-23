@@ -36,25 +36,23 @@ private struct ModeRow: View {
     }
 }
 
-/// Entry-point (target) picker — defaults to lib/main.dart, lists lib/main*.dart.
+/// Entry-point (target) selector — shows the current file + a file picker so any
+/// .dart entry (lib/main_prod.dart, etc.) can be chosen, not just scanned ones.
 struct EntryRow: View {
     @EnvironmentObject var model: AppModel
     var body: some View {
         HStack(spacing: Theme.s2) {
             Image(systemName: "doc.text").foregroundStyle(.tint).frame(width: 18)
-            Picker("", selection: targetBinding) {
-                ForEach(model.entryPoints, id: \.self) { Text($0).tag($0) }
+            Text(model.target.isEmpty ? "lib/main.dart" : model.target)
+                .font(.callout).lineLimit(1).truncationMode(.middle)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button("Choose…") { model.chooseEntryPoint() }
+                .buttonStyle(.secondary)
+            if !model.target.isEmpty && model.target != "lib/main.dart" {
+                Button { model.target = "lib/main.dart" } label: { Image(systemName: "arrow.uturn.backward") }
+                    .buttonStyle(.icon).help("Reset to lib/main.dart")
             }
-            .labelsHidden()
-            Button { model.scanEntryPoints() } label: { Image(systemName: "arrow.clockwise") }
-                .buttonStyle(.icon).help("Rescan entry points")
         }
-    }
-    private var targetBinding: Binding<String> {
-        Binding(
-            get: { model.target.isEmpty ? "lib/main.dart" : model.target },
-            set: { model.target = $0 }
-        )
     }
 }
 
