@@ -42,16 +42,23 @@ struct EntryRow: View {
     @EnvironmentObject var model: AppModel
     var body: some View {
         HStack(spacing: Theme.s2) {
-            Image(systemName: "doc.text").foregroundStyle(.tint).frame(width: 18)
-            Text(model.target.isEmpty ? "lib/main.dart" : model.target)
-                .font(.callout).lineLimit(1).truncationMode(.middle)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Button("Choose…") { model.chooseEntryPoint() }
-                .buttonStyle(.secondary)
+            Image(systemName: "doc.text").foregroundStyle(.secondary).font(.caption)
+            Text("Dart entrypoint").font(.caption).foregroundStyle(.secondary)
+            // Current file chip + Choose, kept together so the relationship is clear.
+            Button { model.chooseEntryPoint() } label: {
+                HStack(spacing: Theme.s1) {
+                    Text(model.target.isEmpty ? "lib/main.dart" : model.target)
+                        .lineLimit(1).truncationMode(.middle)
+                    Image(systemName: "chevron.down").font(.caption2).opacity(0.6)
+                }
+            }
+            .buttonStyle(.secondary)
+            .help("Choose entry .dart file")
             if !model.target.isEmpty && model.target != "lib/main.dart" {
                 Button { model.target = "lib/main.dart" } label: { Image(systemName: "arrow.uturn.backward") }
                     .buttonStyle(.icon).help("Reset to lib/main.dart")
             }
+            Spacer(minLength: 0)
         }
     }
 }
@@ -97,6 +104,25 @@ private struct HotControls: View {
     }
 }
 
+/// Compact branch switcher for the Run tab / menu-bar panel.
+struct BranchRow: View {
+    @EnvironmentObject var model: AppModel
+    var body: some View {
+        HStack(spacing: Theme.s2) {
+            Image(systemName: "arrow.triangle.branch").foregroundStyle(.secondary).font(.caption)
+            Text("Branch").font(.caption).foregroundStyle(.secondary)
+            Picker("", selection: Binding(
+                get: { model.currentBranch },
+                set: { model.checkoutBranch($0) })) {
+                ForEach(model.gitBranches, id: \.self) { Text($0).tag($0) }
+            }
+            .labelsHidden()
+            .disabled(model.isBusy || model.isRunning)
+            Spacer(minLength: 0)
+        }
+    }
+}
+
 // MARK: - Run tab (full window)
 
 struct RunView: View {
@@ -105,10 +131,8 @@ struct RunView: View {
         TabScaffold(title: "Run", icon: "play.fill") {
             DeviceRow().frame(maxWidth: 280)
         } content: {
-            HStack(spacing: Theme.s2) {
-                Text("Entry").font(.caption).foregroundStyle(.secondary)
-                EntryRow()
-            }
+            EntryRow()
+            if model.isGitRepo { BranchRow() }
             ModeRow()
             RunControls()
             if model.isRunning { HotControls() }
@@ -152,6 +176,8 @@ struct MenuBarPanel: View {
                 }.labelsHidden()
             }
             DeviceRow()
+            EntryRow()
+            if model.isGitRepo { BranchRow() }
             ModeRow()
 
             // Run / Stop + hot controls

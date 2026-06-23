@@ -1,28 +1,74 @@
 import SwiftUI
 
+/// Sidebar tabs. A list scales far better than a top tab bar once there are
+/// many sections (the old TabView overflowed at larger UI sizes).
+enum Tab: String, CaseIterable, Identifiable {
+    case run, emulators, build, packages, commands, git, sdk, doctor, settings
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .run: "Run"; case .emulators: "Emulators"; case .build: "Build"
+        case .packages: "Packages"; case .commands: "Commands"; case .git: "Git"
+        case .sdk: "SDK"; case .doctor: "Doctor"; case .settings: "Settings"
+        }
+    }
+    var icon: String {
+        switch self {
+        case .run: "play.fill"; case .emulators: "iphone"; case .build: "hammer.fill"
+        case .packages: "cube.box"; case .commands: "terminal"; case .git: "arrow.triangle.branch"
+        case .sdk: "shippingbox"; case .doctor: "stethoscope"; case .settings: "gearshape"
+        }
+    }
+}
+
 /// The full control-surface window (Dock app). Tabs share one AppModel.
 struct MainWindow: View {
     @EnvironmentObject var model: AppModel
+    @State private var selection: Tab = .run
 
     var body: some View {
-        VStack(spacing: 0) {
-            topBar
-            if !model.flutterAvailable { missingFlutterBanner }
-            Divider()
-            TabView {
-                RunView().tabItem { Label("Run", systemImage: "play.fill") }
-                EmulatorsView().tabItem { Label("Emulators", systemImage: "iphone") }
-                BuildView().tabItem { Label("Build", systemImage: "hammer.fill") }
-                DependenciesView().tabItem { Label("Packages", systemImage: "cube.box") }
-                CommandsView().tabItem { Label("Commands", systemImage: "terminal") }
-                GitView().tabItem { Label("Git", systemImage: "arrow.triangle.branch") }
-                SDKView().tabItem { Label("SDK", systemImage: "shippingbox") }
-                DoctorView().tabItem { Label("Doctor", systemImage: "stethoscope") }
-                SettingsView().tabItem { Label("Settings", systemImage: "gearshape") }
+        NavigationSplitView {
+            sidebar
+        } detail: {
+            VStack(spacing: 0) {
+                topBar
+                if !model.flutterAvailable { missingFlutterBanner }
+                Divider()
+                detail
             }
+            .frame(minWidth: 460)
         }
         .frame(minWidth: Theme.windowMinW, minHeight: Theme.windowMinH)
         .dynamicTypeSize(model.dynamicType)
+    }
+
+    private var sidebar: some View {
+        List(Tab.allCases, selection: $selection) { tab in
+            Label(tab.title, systemImage: tab.icon).tag(tab)
+        }
+        .navigationSplitViewColumnWidth(min: 150, ideal: 170, max: 220)
+        .safeAreaInset(edge: .top) {
+            HStack(spacing: Theme.s2) {
+                Image(systemName: "bird.fill").foregroundStyle(.tint)
+                Text("Flutter Runner").font(.headline)
+                Spacer()
+            }
+            .padding(.horizontal, Theme.s3).padding(.vertical, Theme.s2)
+        }
+    }
+
+    @ViewBuilder private var detail: some View {
+        switch selection {
+        case .run: RunView()
+        case .emulators: EmulatorsView()
+        case .build: BuildView()
+        case .packages: DependenciesView()
+        case .commands: CommandsView()
+        case .git: GitView()
+        case .sdk: SDKView()
+        case .doctor: DoctorView()
+        case .settings: SettingsView()
+        }
     }
 
     private var missingFlutterBanner: some View {
@@ -40,14 +86,19 @@ struct MainWindow: View {
 
     private var topBar: some View {
         HStack(spacing: Theme.s2) {
-            Image(systemName: "bird.fill").foregroundStyle(.tint)
             Picker("", selection: $model.selectedProject) {
                 ForEach(model.projects, id: \.self) { url in
                     Text(url.lastPathComponent).tag(Optional(url))
                 }
             }
             .labelsHidden()
-            .frame(maxWidth: 220)
+            .frame(maxWidth: 200)
+
+            if model.isGitRepo && !model.currentBranch.isEmpty {
+                Label(model.currentBranch, systemImage: "arrow.triangle.branch")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
 
             Spacer()
 
