@@ -50,9 +50,10 @@ app that does what the Android Studio Flutter plugin does, next to *any* editor.
 
 ## Features
 
-- 🐦 **Menu-bar quick panel** — device picker, Run/Stop, Hot reload/restart, `--dart-define`, **DevTools**, quick Build & Tools, live log. Never leave your editor.
-- ▶️ **Run** — any device, **debug / profile / release**, hot reload & restart (reliable via `--pid-file` + `SIGUSR1/2`, no TTY needed), inline **`--dart-define`** editor applied to both run and build.
-- 🐞 **DevTools** — one click opens the running app's **Flutter DevTools** (debugger/profiler) in your browser, auto-wired to the live session.
+- 🐦 **Menu-bar quick panel** — device picker, Run/Stop, Hot reload/restart, `--dart-define` pairs, **DevTools**, quick Build & Tools, live log. Never leave your editor.
+- ▶️ **Run** — any device, **debug / profile / release**, hot reload & restart (reliable via `--pid-file` + `SIGUSR1/2`, no TTY needed).
+- 🔑 **`--dart-define`** — add **KEY / value pairs one by one** in a structured editor (each removable); applied to both run and build, remembered per project.
+- 🐞 **DevTools** — one click from the menu bar opens the running app's **Flutter DevTools** (debugger/profiler) in your browser, auto-wired to the live session.
 - 📱 **Emulators** — list & launch Android AVDs and iOS simulators.
 - 🔨 **Build** — APK / **AAB** / **IPA** / iOS / Web / macOS with flavor, build name/number, `--dart-define`, `--split-per-abi`, `--obfuscate`; **prefilled from `pubspec.yaml`**; reveal artifact in Finder.
 - 🔐 **Android signing** — choose or **generate a keystore** (`keytool`) and write `android/key.properties`.
