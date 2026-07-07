@@ -104,18 +104,53 @@ private struct HotControls: View {
     }
 }
 
-/// Compact dart-define editor — applied to both `flutter run` and builds.
+/// dart-define editor — key and value entered separately and added one by one;
+/// each pair is passed as `--dart-define KEY=VALUE` on both run and build.
 struct DartDefineRow: View {
     @EnvironmentObject var model: AppModel
+    @State private var newKey = ""
+    @State private var newValue = ""
+
     var body: some View {
-        HStack(spacing: Theme.s2) {
-            Image(systemName: "curlybraces").foregroundStyle(.secondary).font(.caption)
-            Text("dart-define").font(.caption).foregroundStyle(.secondary)
-            TextField("KEY=VAL KEY2=VAL2", text: $model.dartDefines)
-                .textFieldStyle(.roundedBorder)
-                .font(.caption)
+        VStack(alignment: .leading, spacing: Theme.s1) {
+            HStack(spacing: Theme.s2) {
+                Image(systemName: "curlybraces").foregroundStyle(.secondary).font(.caption)
+                Text("dart-define").font(.caption).foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+            }
+            // Existing pairs, each removable.
+            ForEach(model.defines) { d in
+                HStack(spacing: Theme.s1) {
+                    Text(d.key).font(.caption.monospaced())
+                    Text("=").font(.caption).foregroundStyle(.secondary)
+                    Text(d.value.isEmpty ? "∅" : d.value)
+                        .font(.caption.monospaced()).foregroundStyle(.secondary)
+                        .lineLimit(1).truncationMode(.middle)
+                    Spacer(minLength: 0)
+                    Button { model.removeDefine(d) } label: { Image(systemName: "trash") }
+                        .buttonStyle(.icon).help("Remove \(d.key)")
+                }
+            }
+            // Add row: key + value + plus.
+            HStack(spacing: Theme.s1) {
+                TextField("KEY", text: $newKey)
+                    .textFieldStyle(.roundedBorder).font(.caption).frame(maxWidth: 110)
+                    .onSubmit(add)
+                TextField("value", text: $newValue)
+                    .textFieldStyle(.roundedBorder).font(.caption)
+                    .onSubmit(add)
+                Button { add() } label: { Image(systemName: "plus.circle.fill") }
+                    .buttonStyle(.icon)
+                    .disabled(newKey.trimmed.isEmpty)
+                    .help("Add dart-define")
+            }
         }
-        .help("Space-separated KEY=VALUE pairs, passed as --dart-define on run and build")
+    }
+
+    private func add() {
+        guard !newKey.trimmed.isEmpty else { return }
+        model.addDefine(key: newKey, value: newValue)
+        newKey = ""; newValue = ""
     }
 }
 
@@ -166,7 +201,8 @@ struct RunView: View {
             if model.isGitRepo { BranchRow() }
             ModeRow()
             RunControls()
-            if model.isRunning { HotControls(); DevToolsButton() }
+            if model.isRunning { HotControls() }
+            DevToolsButton()
         }
     }
 }
@@ -212,9 +248,10 @@ struct MenuBarPanel: View {
             if model.isGitRepo { BranchRow() }
             ModeRow()
 
-            // Run / Stop + hot controls + DevTools
+            // Run / Stop + hot controls + DevTools (always shown, opens browser)
             RunControls()
-            if model.isRunning { HotControls(); DevToolsButton() }
+            if model.isRunning { HotControls() }
+            DevToolsButton()
 
             // Quick build + tools so the panel covers everyday needs
             HStack(spacing: Theme.s2) {

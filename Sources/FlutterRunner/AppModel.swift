@@ -43,7 +43,7 @@ final class AppModel: ObservableObject {
     // Build options (Phase 05) — persisted per project
     @Published var buildName: String = "" { didSet { scheduleSave() } }
     @Published var buildNumber: String = "" { didSet { scheduleSave() } }
-    @Published var dartDefines: String = "" { didSet { scheduleSave() } }   // space-separated KEY=VALUE
+    @Published var defines: [DartDefine] = [] { didSet { scheduleSave() } }  // --dart-define KEY=VALUE pairs
     @Published var target: String = "" { didSet { scheduleSave() } }        // e.g. lib/main_dev.dart
     @Published var splitPerAbi = false { didSet { scheduleSave() } }
     @Published var obfuscate = false { didSet { scheduleSave() } }
@@ -64,6 +64,10 @@ final class AppModel: ObservableObject {
     @Published var gitBranches: [String] = []
     @Published var currentBranch: String = ""
 
+    /// Codable form of a dart-define pair (kept separate from the UI model so
+    /// persisted JSON is stable and doesn't store transient ids).
+    struct StoredDefine: Codable { var key: String; var value: String }
+
     /// Persisted per-project state (build options, signing, device, mode).
     private struct ProjectSettings: Codable {
         var mode = "debug"
@@ -71,7 +75,8 @@ final class AppModel: ObservableObject {
         var flavor = ""
         var buildName = ""
         var buildNumber = ""
-        var dartDefines = ""
+        var dartDefines = ""                 // legacy space-separated form (migration)
+        var defines: [StoredDefine]?         // structured key/value pairs
         var target = ""
         var splitPerAbi = false
         var obfuscate = false
@@ -186,7 +191,11 @@ final class AppModel: ObservableObject {
         flavor = s.flavor
         buildName = s.buildName
         buildNumber = s.buildNumber
-        dartDefines = s.dartDefines
+        if let stored = s.defines {
+            defines = stored.map { DartDefine(key: $0.key, value: $0.value) }
+        } else {
+            defines = AppModel.parseDefines(s.dartDefines)   // migrate legacy string
+        }
         target = s.target
         splitPerAbi = s.splitPerAbi
         obfuscate = s.obfuscate
@@ -211,7 +220,9 @@ final class AppModel: ObservableObject {
         guard let project = selectedProject else { return }
         let s = ProjectSettings(
             mode: mode.rawValue, deviceId: selectedDevice?.id, flavor: flavor,
-            buildName: buildName, buildNumber: buildNumber, dartDefines: dartDefines,
+            buildName: buildName, buildNumber: buildNumber,
+            dartDefines: defines.map { "\($0.key)=\($0.value)" }.joined(separator: " "),
+            defines: defines.map { StoredDefine(key: $0.key, value: $0.value) },
             target: target, splitPerAbi: splitPerAbi, obfuscate: obfuscate,
             keystorePath: keystorePath, keyAlias: keyAlias,
             storePassword: storePassword, keyPassword: keyPassword)
@@ -449,8 +460,8 @@ final class AppModel: ObservableObject {
         if !target.trimmed.isEmpty, target.trimmed != "lib/main.dart" {
             args.append(contentsOf: ["--target", target.trimmed])
         }
-        for d in dartDefines.split(separator: " ") where d.contains("=") {
-            args += ["--dart-define", String(d)]
+        for d in defines where !d.key.trimmed.isEmpty {
+            args += ["--dart-define", "\(d.key.trimmed)=\(d.value)"]
         }
         // pid-file lets us signal hot reload/restart reliably (no TTY needed).
         let pidURL = FileManager.default.temporaryDirectory
@@ -509,8 +520,8 @@ final class AppModel: ObservableObject {
         if obfuscate {
             args += ["--obfuscate", "--split-debug-info", "build/symbols"]
         }
-        for d in dartDefines.split(separator: " ") where d.contains("=") {
-            args += ["--dart-define", String(d)]
+        for d in defines where !d.key.trimmed.isEmpty {
+            args += ["--dart-define", "\(d.key.trimmed)=\(d.value)"]
         }
         runOneShot(args: args, project: project, label: "Build \(artifact)")
     }
@@ -872,6 +883,32 @@ final class AppModel: ObservableObject {
         NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
+    // MARK: - dart-define pairs
+
+    /// Add (or update) a KEY=VALUE define. Existing keys are overwritten.
+    func addDefine(key: String, value: String) {
+        let k = key.trimmed
+        guard !k.isEmpty else { return }
+        if let i = defines.firstIndex(where: { $0.key == k }) {
+            defines[i].value = value
+        } else {
+            defines.append(DartDefine(key: k, value: value))
+        }
+    }
+
+    func removeDefine(_ d: DartDefine) {
+        defines.removeAll { $0.id == d.id }
+    }
+
+    /// Parse a legacy space-separated "KEY=VAL KEY2=VAL2" string into pairs.
+    static func parseDefines(_ raw: String) -> [DartDefine] {
+        raw.split(separator: " ").compactMap { token in
+            guard let eq = token.firstIndex(of: "="), eq != token.startIndex else { return nil }
+            return DartDefine(key: String(token[token.startIndex..<eq]),
+                              value: String(token[token.index(after: eq)...]))
+        }
+    }
+
     /// Open Flutter DevTools in the default browser, using the URL parsed from the
     /// live `flutter run` session (it's already wired to the running app).
     func openDevTools() {
@@ -891,6 +928,13 @@ func shellQuote(_ s: String) -> String {
 
 extension String {
     var trimmed: String { trimmingCharacters(in: .whitespacesAndNewlines) }
+}
+
+/// A single `--dart-define KEY=VALUE` pair (UI model).
+struct DartDefine: Identifiable, Hashable {
+    var id = UUID()
+    var key: String
+    var value: String
 }
 
 /// A pubspec dependency.

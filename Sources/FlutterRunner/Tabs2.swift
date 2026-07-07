@@ -37,9 +37,10 @@ struct BuildView: View {
                     GridRow { Text("Build name"); TextField("e.g. 1.2.0", text: $model.buildName) }
                     GridRow { Text("Build number"); TextField("e.g. 42", text: $model.buildNumber) }
                     GridRow { Text("Target"); TextField("lib/main.dart", text: $model.target) }
-                    GridRow { Text("dart-define"); TextField("KEY=VAL KEY2=VAL2", text: $model.dartDefines) }
                 }
                 .textFieldStyle(.roundedBorder)
+                DartDefineRow()
+                    .padding(.top, Theme.s1)
                 HStack(spacing: Theme.s4) {
                     Toggle("split-per-abi (apk)", isOn: $model.splitPerAbi)
                     Toggle("obfuscate", isOn: $model.obfuscate)
