@@ -104,6 +104,36 @@ private struct HotControls: View {
     }
 }
 
+/// Compact dart-define editor — applied to both `flutter run` and builds.
+struct DartDefineRow: View {
+    @EnvironmentObject var model: AppModel
+    var body: some View {
+        HStack(spacing: Theme.s2) {
+            Image(systemName: "curlybraces").foregroundStyle(.secondary).font(.caption)
+            Text("dart-define").font(.caption).foregroundStyle(.secondary)
+            TextField("KEY=VAL KEY2=VAL2", text: $model.dartDefines)
+                .textFieldStyle(.roundedBorder)
+                .font(.caption)
+        }
+        .help("Space-separated KEY=VALUE pairs, passed as --dart-define on run and build")
+    }
+}
+
+/// Opens Flutter DevTools in the browser using the live run session's URL.
+struct DevToolsButton: View {
+    @EnvironmentObject var model: AppModel
+    var body: some View {
+        Button { model.openDevTools() } label: {
+            Label("DevTools", systemImage: "ladybug.fill").frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.secondary)
+        .disabled(model.devToolsURL == nil)
+        .help(model.devToolsURL == nil
+              ? "Available once a debug run is up"
+              : "Open Flutter DevTools in your browser")
+    }
+}
+
 /// Compact branch switcher for the Run tab / menu-bar panel.
 struct BranchRow: View {
     @EnvironmentObject var model: AppModel
@@ -132,10 +162,11 @@ struct RunView: View {
             DeviceRow().frame(maxWidth: 280)
         } content: {
             EntryRow()
+            DartDefineRow()
             if model.isGitRepo { BranchRow() }
             ModeRow()
             RunControls()
-            if model.isRunning { HotControls() }
+            if model.isRunning { HotControls(); DevToolsButton() }
         }
     }
 }
@@ -177,12 +208,13 @@ struct MenuBarPanel: View {
             }
             DeviceRow()
             EntryRow()
+            DartDefineRow()
             if model.isGitRepo { BranchRow() }
             ModeRow()
 
-            // Run / Stop + hot controls
+            // Run / Stop + hot controls + DevTools
             RunControls()
-            if model.isRunning { HotControls() }
+            if model.isRunning { HotControls(); DevToolsButton() }
 
             // Quick build + tools so the panel covers everyday needs
             HStack(spacing: Theme.s2) {

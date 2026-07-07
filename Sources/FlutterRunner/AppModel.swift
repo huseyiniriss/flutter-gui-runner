@@ -114,6 +114,9 @@ final class AppModel: ObservableObject {
     @Published var isScanning = false         // devices/emulators/version refresh in flight
     @Published var statusLine = "Ready"
 
+    /// DevTools URL parsed from a live `flutter run` session; drives "Open DevTools".
+    @Published var devToolsURL: String?
+
     private var process: Process?
     private var pidFileURL: URL?
 
@@ -445,6 +448,9 @@ final class AppModel: ObservableObject {
         }
         if !target.trimmed.isEmpty, target.trimmed != "lib/main.dart" {
             args.append(contentsOf: ["--target", target.trimmed])
+        }
+        for d in dartDefines.split(separator: " ") where d.contains("=") {
+            args += ["--dart-define", String(d)]
         }
         // pid-file lets us signal hot reload/restart reliably (no TTY needed).
         let pidURL = FileManager.default.temporaryDirectory
@@ -824,7 +830,7 @@ final class AppModel: ObservableObject {
     private var pendingLog = ""
     private var flushScheduled = false
 
-    func clearLog() { log = ""; pendingLog = "" }
+    func clearLog() { log = ""; pendingLog = ""; devToolsURL = nil }
 
     /// Buffer log text and flush at most ~6×/sec, so a chatty `flutter run`
     /// doesn't re-render the whole UI on every byte (was the beachball cause).
@@ -850,6 +856,12 @@ final class AppModel: ObservableObject {
             lastArtifactPath = chunk[r].replacingOccurrences(of: "Built ", with: "")
                 .trimmingCharacters(in: CharacterSet(charactersIn: " .\n"))
         }
+        // Capture the DevTools URL printed by `flutter run` for the browser button.
+        if let r = chunk.range(of: #"(?:DevTools[^\n]*available at:|Dart DevTools[^\n]*at:)\s*(https?://\S+)"#,
+                               options: [.regularExpression]),
+           let u = chunk[r].range(of: #"https?://\S+"#, options: [.regularExpression]) {
+            devToolsURL = String(chunk[u]).trimmingCharacters(in: CharacterSet(charactersIn: " .\n"))
+        }
         if log.utf16.count > 200_000 { log = String(log.suffix(150_000)) }
     }
 
@@ -858,6 +870,17 @@ final class AppModel: ObservableObject {
         let url = path.hasPrefix("/") ? URL(fileURLWithPath: path)
             : project.appendingPathComponent(path)
         NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
+    /// Open Flutter DevTools in the default browser, using the URL parsed from the
+    /// live `flutter run` session (it's already wired to the running app).
+    func openDevTools() {
+        guard let s = devToolsURL, let url = URL(string: s) else {
+            appendLog("\n⚠️ DevTools URL not available yet — run the app in debug mode, then try again.\n")
+            return
+        }
+        NSWorkspace.shared.open(url)
+        appendLog("\n🔧 Opening DevTools: \(s)\n")
     }
 }
 
