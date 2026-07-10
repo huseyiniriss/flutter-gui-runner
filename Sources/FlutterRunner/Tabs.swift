@@ -63,6 +63,11 @@ struct SDKView: View {
             }
             .buttonStyle(.icon)
         } content: {
+            Card(title: "Selected SDK") {
+                SDKPicker()
+                Text("Pick a discovered SDK (PATH default, FVM versions, common install dirs), or set a custom path in Settings.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
             Card(title: "Installed") {
                 Grid(alignment: .leading, horizontalSpacing: Theme.s4, verticalSpacing: Theme.s1) {
                     GridRow { Text("Flutter").foregroundStyle(.secondary); Text(model.flutterVersion).bold() }

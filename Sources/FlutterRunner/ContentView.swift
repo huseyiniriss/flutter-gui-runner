@@ -116,20 +116,33 @@ struct DartDefineRow: View {
             HStack(spacing: Theme.s2) {
                 Image(systemName: "curlybraces").foregroundStyle(.secondary).font(.caption)
                 Text("dart-define").font(.caption).foregroundStyle(.secondary)
+                if !model.defines.isEmpty {
+                    Text("\(model.enabledDefineCount)/\(model.defines.count) on")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
                 Spacer(minLength: 0)
             }
-            // Existing pairs, each removable.
+            // Existing pairs — each can be toggled on/off (env enable/disable) or removed.
             ForEach(model.defines) { d in
                 HStack(spacing: Theme.s1) {
+                    Button { model.toggleDefine(d) } label: {
+                        Image(systemName: d.enabled ? "checkmark.square.fill" : "square")
+                            .foregroundStyle(d.enabled ? Color.accentColor : .secondary)
+                    }
+                    .buttonStyle(.icon)
+                    .help(d.enabled ? "Disable (keep, but don't pass)" : "Enable")
                     Text(d.key).font(.caption.monospaced())
+                        .foregroundStyle(d.enabled ? .primary : .secondary)
                     Text("=").font(.caption).foregroundStyle(.secondary)
                     Text(d.value.isEmpty ? "∅" : d.value)
                         .font(.caption.monospaced()).foregroundStyle(.secondary)
                         .lineLimit(1).truncationMode(.middle)
+                        .strikethrough(!d.enabled)
                     Spacer(minLength: 0)
                     Button { model.removeDefine(d) } label: { Image(systemName: "trash") }
                         .buttonStyle(.icon).help("Remove \(d.key)")
                 }
+                .opacity(d.enabled ? 1 : 0.55)
             }
             // Add row: key + value + plus.
             HStack(spacing: Theme.s1) {
@@ -166,6 +179,34 @@ struct DevToolsButton: View {
         .help(model.devToolsURL == nil
               ? "Available once a debug run is up"
               : "Open Flutter DevTools in your browser")
+    }
+}
+
+/// Flutter SDK selector — choose between the PATH default, FVM-managed versions,
+/// and common install locations. Shared by the SDK tab, Settings, and menu bar.
+struct SDKPicker: View {
+    @EnvironmentObject var model: AppModel
+    var compact = false
+
+    var body: some View {
+        HStack(spacing: Theme.s2) {
+            Image(systemName: "shippingbox").foregroundStyle(.secondary).font(.caption)
+            if compact { Text("SDK").font(.caption).foregroundStyle(.secondary) }
+            Picker("", selection: Binding(
+                get: { model.selectedSDKPath },
+                set: { model.selectedSDKPath = $0 })) {
+                ForEach(model.availableSDKs) { sdk in
+                    Text(sdk.label).tag(sdk.path)
+                }
+                // Keep the current value selectable even if discovery missed it.
+                if !model.availableSDKs.contains(where: { $0.path == model.selectedSDKPath }) {
+                    Text("Custom · current").tag(model.selectedSDKPath)
+                }
+            }
+            .labelsHidden()
+            Button { model.discoverSDKs() } label: { Image(systemName: "arrow.clockwise") }
+                .buttonStyle(.icon).help("Rescan for installed SDKs")
+        }
     }
 }
 
@@ -235,13 +276,16 @@ struct MenuBarPanel: View {
             }
             Divider()
 
-            // Project + device + mode
+            // Project + SDK + device + mode
             HStack(spacing: Theme.s2) {
                 Image(systemName: "folder").foregroundStyle(.secondary).frame(width: 16)
                 Picker("", selection: $model.selectedProject) {
                     ForEach(model.projects, id: \.self) { Text($0.lastPathComponent).tag(Optional($0)) }
                 }.labelsHidden()
+                Button { model.chooseProjects() } label: { Image(systemName: "folder.badge.plus") }
+                    .buttonStyle(.icon).help("Add project(s)…")
             }
+            SDKPicker(compact: true)
             DeviceRow()
             EntryRow()
             DartDefineRow()

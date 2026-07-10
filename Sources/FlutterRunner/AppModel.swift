@@ -32,6 +32,7 @@ final class AppModel: ObservableObject {
     @Published var flavor: String = "" { didSet { scheduleSave() } }
 
     @Published var emulators: [Emulator] = []
+    @Published var availableSDKs: [FlutterSDK] = []
     @Published var flutterVersion: String = "—"
     @Published var flutterChannel: String = "—"
     @Published var dartVersion: String = "—"
@@ -66,7 +67,7 @@ final class AppModel: ObservableObject {
 
     /// Codable form of a dart-define pair (kept separate from the UI model so
     /// persisted JSON is stable and doesn't store transient ids).
-    struct StoredDefine: Codable { var key: String; var value: String }
+    struct StoredDefine: Codable { var key: String; var value: String; var enabled: Bool? }
 
     /// Persisted per-project state (build options, signing, device, mode).
     private struct ProjectSettings: Codable {
@@ -150,6 +151,7 @@ final class AppModel: ObservableObject {
         if let h = defaults.object(forKey: "logHeight") as? Double { logHeight = CGFloat(h) }
 
         discoverProjects()
+        discoverSDKs()
         if let saved = defaults.string(forKey: "selectedProject"),
            let url = projects.first(where: { $0.path == saved }) {
             selectedProject = url
@@ -192,7 +194,7 @@ final class AppModel: ObservableObject {
         buildName = s.buildName
         buildNumber = s.buildNumber
         if let stored = s.defines {
-            defines = stored.map { DartDefine(key: $0.key, value: $0.value) }
+            defines = stored.map { DartDefine(key: $0.key, value: $0.value, enabled: $0.enabled ?? true) }
         } else {
             defines = AppModel.parseDefines(s.dartDefines)   // migrate legacy string
         }
@@ -222,7 +224,7 @@ final class AppModel: ObservableObject {
             mode: mode.rawValue, deviceId: selectedDevice?.id, flavor: flavor,
             buildName: buildName, buildNumber: buildNumber,
             dartDefines: defines.map { "\($0.key)=\($0.value)" }.joined(separator: " "),
-            defines: defines.map { StoredDefine(key: $0.key, value: $0.value) },
+            defines: defines.map { StoredDefine(key: $0.key, value: $0.value, enabled: $0.enabled) },
             target: target, splitPerAbi: splitPerAbi, obfuscate: obfuscate,
             keystorePath: keystorePath, keyAlias: keyAlias,
             storePassword: storePassword, keyPassword: keyPassword)
@@ -345,6 +347,84 @@ final class AppModel: ObservableObject {
         selectedProject = url
     }
 
+    /// Add several projects at once, persisting each as a custom entry, then
+    /// select the first newly-added one.
+    func addProjects(_ urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        var custom = defaults.stringArray(forKey: "customProjects") ?? []
+        var firstNew: URL?
+        for url in urls where !custom.contains(url.path) {
+            custom.append(url.path)
+            if firstNew == nil { firstNew = url }
+        }
+        defaults.set(custom, forKey: "customProjects")
+        discoverProjects()
+        if let sel = firstNew ?? urls.first { selectedProject = sel }
+    }
+
+    /// Whether a project was added manually (and can therefore be removed again).
+    func isCustomProject(_ url: URL) -> Bool {
+        (defaults.stringArray(forKey: "customProjects") ?? []).contains(url.path)
+    }
+
+    /// Forget a manually-added project. Projects found under the scan root will
+    /// reappear on the next rescan — only custom entries are truly removable.
+    func removeProject(_ url: URL) {
+        var custom = defaults.stringArray(forKey: "customProjects") ?? []
+        custom.removeAll { $0 == url.path }
+        defaults.set(custom, forKey: "customProjects")
+        discoverProjects()
+        if selectedProject == url { selectedProject = projects.first }
+    }
+
+    /// Expand a chosen folder into the Flutter projects it represents: the folder
+    /// itself if it has a pubspec.yaml, otherwise every child (and grandchild)
+    /// that does — so picking one parent folder bulk-imports all apps inside it.
+    func flutterProjectDirs(in folder: URL) -> [URL] {
+        let fm = FileManager.default
+        func hasPubspec(_ dir: URL) -> Bool {
+            fm.fileExists(atPath: dir.appendingPathComponent("pubspec.yaml").path)
+        }
+        if hasPubspec(folder) { return [folder] }
+        var found: [URL] = []
+        if let children = try? fm.contentsOfDirectory(
+            at: folder, includingPropertiesForKeys: [.isDirectoryKey]) {
+            for child in children {
+                var isDir: ObjCBool = false
+                guard fm.fileExists(atPath: child.path, isDirectory: &isDir), isDir.boolValue
+                else { continue }
+                if hasPubspec(child) { found.append(child); continue }
+                if let subs = try? fm.contentsOfDirectory(at: child, includingPropertiesForKeys: nil) {
+                    for sub in subs where hasPubspec(sub) { found.append(sub) }
+                }
+            }
+        }
+        return found
+    }
+
+    /// Open a folder picker (multi-select) and add every Flutter project found in
+    /// the chosen folders — one folder, several folders, or a parent that holds
+    /// many apps all work.
+    func chooseProjects() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = true
+        panel.prompt = "Add"
+        panel.message = "Select one or more Flutter project folders (or a folder that contains several)."
+        guard panel.runModal() == .OK else { return }
+        var toAdd: [URL] = []
+        for url in panel.urls {
+            for dir in flutterProjectDirs(in: url) where !toAdd.contains(dir) { toAdd.append(dir) }
+        }
+        if toAdd.isEmpty {
+            appendLog("⚠️ No pubspec.yaml found in the selected folder(s).\n")
+        } else {
+            addProjects(toAdd)
+            appendLog("✅ Added \(toAdd.count) project(s).\n")
+        }
+    }
+
     // MARK: - Devices
 
     func refreshDevices() async {
@@ -435,6 +515,61 @@ final class AppModel: ObservableObject {
         runOneShot(args: ["upgrade"], project: project, label: "flutter upgrade")
     }
 
+    // MARK: - SDK discovery / selection
+
+    /// Find installed Flutter SDKs so the user can pick one instead of typing a
+    /// path: the PATH default, every FVM-managed version, and common install dirs.
+    func discoverSDKs() {
+        let fm = FileManager.default
+        let home = fm.homeDirectoryForCurrentUser.path
+        var list: [FlutterSDK] = [FlutterSDK(path: "", label: "System (PATH)")]
+        var seen = Set<String>()   // dedup by resolved binary path
+
+        func add(binary: String, label: String) {
+            guard fm.isExecutableFile(atPath: binary), !seen.contains(binary) else { return }
+            seen.insert(binary)
+            list.append(FlutterSDK(path: binary, label: label))
+        }
+
+        // FVM-managed versions: each subfolder is an SDK root.
+        for base in ["\(home)/fvm/versions", "\(home)/.fvm/versions"] {
+            guard let versions = try? fm.contentsOfDirectory(atPath: base) else { continue }
+            for v in versions.sorted() {
+                add(binary: "\(base)/\(v)/bin/flutter", label: "FVM · \(v)")
+            }
+        }
+
+        // Common single-SDK install locations.
+        for root in ["\(home)/development/flutter", "\(home)/flutter",
+                     "\(home)/sdk/flutter", "\(home)/.flutter",
+                     "/opt/homebrew/flutter", "/usr/local/flutter"] {
+            add(binary: "\(root)/bin/flutter",
+                label: (root as NSString).abbreviatingWithTildeInPath)
+        }
+
+        // Whatever the user configured, if it isn't already in the list.
+        let override = flutterPathOverride.trimmed
+        if !override.isEmpty, let bin = Self.resolveFlutterBinary(override) {
+            add(binary: bin, label: "Custom · \((bin as NSString).abbreviatingWithTildeInPath)")
+        }
+
+        availableSDKs = list
+    }
+
+    /// The picker's current selection: the resolved binary of the active override,
+    /// or "" for the PATH default.
+    var selectedSDKPath: String {
+        get {
+            let override = flutterPathOverride.trimmed
+            guard !override.isEmpty else { return "" }
+            return Self.resolveFlutterBinary(override) ?? override
+        }
+        set {
+            flutterPathOverride = newValue
+            Task { await checkFlutter(); await refreshVersion() }
+        }
+    }
+
     func setChannel(_ channel: String) {
         guard let project = selectedProject, !isBusy, !isRunning else { return }
         runOneShot(args: ["channel", channel], project: project,
@@ -460,7 +595,7 @@ final class AppModel: ObservableObject {
         if !target.trimmed.isEmpty, target.trimmed != "lib/main.dart" {
             args.append(contentsOf: ["--target", target.trimmed])
         }
-        for d in defines where !d.key.trimmed.isEmpty {
+        for d in defines where d.enabled && !d.key.trimmed.isEmpty {
             args += ["--dart-define", "\(d.key.trimmed)=\(d.value)"]
         }
         // pid-file lets us signal hot reload/restart reliably (no TTY needed).
@@ -520,7 +655,7 @@ final class AppModel: ObservableObject {
         if obfuscate {
             args += ["--obfuscate", "--split-debug-info", "build/symbols"]
         }
-        for d in defines where !d.key.trimmed.isEmpty {
+        for d in defines where d.enabled && !d.key.trimmed.isEmpty {
             args += ["--dart-define", "\(d.key.trimmed)=\(d.value)"]
         }
         runOneShot(args: args, project: project, label: "Build \(artifact)")
@@ -900,6 +1035,15 @@ final class AppModel: ObservableObject {
         defines.removeAll { $0.id == d.id }
     }
 
+    /// Enable/disable a define without removing it — excluded from run/build while off.
+    func toggleDefine(_ d: DartDefine) {
+        guard let i = defines.firstIndex(where: { $0.id == d.id }) else { return }
+        defines[i].enabled.toggle()
+    }
+
+    /// Count of defines that will actually be passed to flutter.
+    var enabledDefineCount: Int { defines.filter { $0.enabled && !$0.key.trimmed.isEmpty }.count }
+
     /// Parse a legacy space-separated "KEY=VAL KEY2=VAL2" string into pairs.
     static func parseDefines(_ raw: String) -> [DartDefine] {
         raw.split(separator: " ").compactMap { token in
@@ -931,10 +1075,20 @@ extension String {
 }
 
 /// A single `--dart-define KEY=VALUE` pair (UI model).
+/// `enabled` lets a pair be kept but excluded from the next run/build.
 struct DartDefine: Identifiable, Hashable {
     var id = UUID()
     var key: String
     var value: String
+    var enabled: Bool = true
+}
+
+/// An installed Flutter SDK the user can select. `path` is the `flutter`
+/// binary (empty means "use the system PATH").
+struct FlutterSDK: Identifiable, Hashable {
+    var id: String { path }
+    let path: String
+    let label: String
 }
 
 /// A pubspec dependency.

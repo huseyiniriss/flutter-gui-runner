@@ -265,6 +265,7 @@ struct SettingsView: View {
                     .font(.caption2).foregroundStyle(.secondary)
             }
             Card(title: "Flutter SDK") {
+                SDKPicker()
                 HStack(spacing: Theme.s2) {
                     TextField("Flutter path override (blank = use PATH)",
                               text: $model.flutterPathOverride)
@@ -286,8 +287,49 @@ struct SettingsView: View {
                         .textFieldStyle(.roundedBorder)
                     Button("Rescan") { model.rescan() }.buttonStyle(.secondary)
                 }
-                Text("Found \(model.projects.count) project(s).")
-                    .font(.caption).foregroundStyle(.secondary)
+                HStack(spacing: Theme.s2) {
+                    Button { model.chooseProjects() } label: {
+                        Label("Add project(s)…", systemImage: "folder.badge.plus")
+                    }
+                    .buttonStyle(.primary)
+                    Text("Found \(model.projects.count) project(s).")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                }
+                Text("Pick a single project, ⌘-click several, or choose a parent folder to bulk-import every app inside it.")
+                    .font(.caption2).foregroundStyle(.secondary)
+                if !model.projects.isEmpty {
+                    VStack(spacing: Theme.s1) {
+                        ForEach(model.projects, id: \.self) { url in
+                            HStack(spacing: Theme.s2) {
+                                Image(systemName: url == model.selectedProject
+                                      ? "largecircle.fill.circle" : "circle")
+                                    .foregroundStyle(url == model.selectedProject ? Color.accentColor : .secondary)
+                                    .font(.caption)
+                                VStack(alignment: .leading, spacing: 0) {
+                                    Text(url.lastPathComponent).font(.caption)
+                                    Text(url.path).font(.caption2).foregroundStyle(.secondary)
+                                        .lineLimit(1).truncationMode(.middle)
+                                }
+                                Spacer()
+                                if model.isCustomProject(url) {
+                                    Text("added").font(.caption2)
+                                        .padding(.horizontal, Theme.s1)
+                                        .background(.blue.opacity(0.15), in: Capsule())
+                                        .foregroundStyle(.blue)
+                                    Button { model.removeProject(url) } label: {
+                                        Image(systemName: "minus.circle")
+                                    }
+                                    .buttonStyle(.icon).help("Remove \(url.lastPathComponent)")
+                                }
+                            }
+                            .padding(.horizontal, Theme.s2).padding(.vertical, Theme.s1)
+                            .background(.background.secondary, in: RoundedRectangle(cornerRadius: Theme.radius))
+                            .contentShape(Rectangle())
+                            .onTapGesture { model.selectedProject = url }
+                        }
+                    }
+                }
             }
             Button("Re-check Flutter") { Task { await model.checkFlutter() } }
                 .buttonStyle(.secondary)
